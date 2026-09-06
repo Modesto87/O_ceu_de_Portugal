@@ -91,6 +91,25 @@ export function forecastUrl() {
   return `https://api.open-meteo.com/v1/forecast?${query}`;
 }
 
+export function weatherResponseFromPayload(
+  payload: unknown,
+  fetchedAt = Date.now(),
+): WeatherResponse {
+  if (
+    !Array.isArray(payload) ||
+    payload.length !== DISTRICTS.length ||
+    !payload.every(validateForecast)
+  )
+    throw new Error('Invalid weather provider response');
+  return {
+    fetchedAt,
+    expiresAt: fetchedAt + HOUR_MS,
+    districts: Object.fromEntries(
+      DISTRICTS.map((district, index) => [district.id, payload[index]]),
+    ),
+  };
+}
+
 /** Shared by all visitors in an isolate; concurrent requests share one fetch. */
 export function createWeatherService(
   fetcher: typeof fetch = fetch,
@@ -108,20 +127,7 @@ export function createWeatherService(
       if (!response.ok)
         throw new Error(`Weather provider returned ${response.status}`);
       const payload: unknown = await response.json();
-      if (
-        !Array.isArray(payload) ||
-        payload.length !== DISTRICTS.length ||
-        !payload.every(validateForecast)
-      )
-        throw new Error('Invalid weather provider response');
-      const fetchedAt = now();
-      cached = {
-        fetchedAt,
-        expiresAt: fetchedAt + HOUR_MS,
-        districts: Object.fromEntries(
-          DISTRICTS.map((d, i) => [d.id, payload[i]]),
-        ),
-      };
+      cached = weatherResponseFromPayload(payload, now());
       return cached;
     })();
     try {

@@ -1,15 +1,40 @@
 'use client';
 import { useQuery } from '@tanstack/react-query';
+import {
+  forecastUrl,
+  weatherResponseFromPayload,
+} from '@/lib/weather/service';
 import type { WeatherResponse } from '@/lib/weather/types';
+
+let useProviderDirectly = false;
+
+async function fetchProvider(signal: AbortSignal) {
+  const response = await fetch(forecastUrl(), { signal, cache: 'no-store' });
+  if (!response.ok)
+    throw new Error(`Weather provider returned ${response.status}`);
+  return weatherResponseFromPayload(await response.json());
+}
 
 export function useWeather() {
   return useQuery<WeatherResponse>({
     queryKey: ['portugal-weather'],
     queryFn: async ({ signal }) => {
-      const response = await fetch('/api/weather', { signal });
-      if (!response.ok)
+      if (!useProviderDirectly) {
+        try {
+          const response = await fetch('/api/weather', { signal });
+          if (response.ok) return response.json();
+          useProviderDirectly = true;
+        } catch (error) {
+          if (signal.aborted) throw error;
+          useProviderDirectly = true;
+        }
+      }
+      try {
+        return await fetchProvider(signal);
+      } catch (error) {
+        if (signal.aborted) throw error;
         throw new Error('A previsão está temporariamente indisponível.');
-      return response.json();
+      }
     },
     staleTime: (query) =>
       Math.max(

@@ -11,7 +11,8 @@ export async function GET() {
     const response = Response.json(data, {
       headers: {
         'Cache-Control': `public, max-age=${seconds}, s-maxage=${seconds}`,
-        'X-Weather-Source': 'Open-Meteo',
+        'X-Weather-Source':
+          data.source === 'met-no' ? 'MET Norway' : 'Open-Meteo',
         'X-Content-Type-Options': 'nosniff',
       },
     });

@@ -33,6 +33,7 @@ export type Forecast = {
   };
 };
 export type WeatherResponse = {
+  source?: 'open-meteo' | 'met-no';
   fetchedAt: number;
   expiresAt: number;
   districts: Record<string, Forecast>;

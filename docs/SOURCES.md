@@ -4,6 +4,14 @@
 
 - Open-Meteo Weather Forecast API: https://open-meteo.com/en/docs
 - Dados sob CC BY 4.0: https://open-meteo.com/en/licence
+
+## Previsão meteorológica de reserva
+
+- MET Norway Locationforecast 2.0: https://api.met.no/weatherapi/locationforecast/2.0/documentation
+- Termos e identificação do cliente: https://api.met.no/doc/TermsOfService
+- Dados MET Norway sob CC BY 4.0 / NLOD 2.0: https://api.met.no/doc/License.html
+- A integração usa o endpoint `complete`, identifica o projeto no `User-Agent`, limita a concorrência e mantém cache de uma hora.
+- A MET Norway não fornece probabilidade de precipitação nesta série global; durante a reserva, a escala de chuva é uma categoria conservadora derivada da quantidade e do símbolo meteorológico recebidos.
 - Plano gratuito e limites: https://open-meteo.com/en/pricing
 - Conversões na aplicação: arredondamento de valores, interpretação de códigos WMO, seleção de horas e apresentação em fusos locais.
 

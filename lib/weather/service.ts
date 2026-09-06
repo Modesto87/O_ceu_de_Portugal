@@ -1,4 +1,5 @@
 import { DISTRICTS } from './districts';
+import { fetchMetNoForecasts } from './met-no';
 import type { Forecast, WeatherResponse } from './types';
 
 export const HOUR_MS = 60 * 60 * 1000;
@@ -102,6 +103,7 @@ export function weatherResponseFromPayload(
   )
     throw new Error('Invalid weather provider response');
   return {
+    source: 'open-meteo',
     fetchedAt,
     expiresAt: fetchedAt + HOUR_MS,
     districts: Object.fromEntries(
@@ -124,6 +126,10 @@ export function createWeatherService(
       const response = await fetcher(forecastUrl(), {
         signal: AbortSignal.timeout(18000),
       });
+      if (response.status === 429 || response.status === 403) {
+        cached = await fetchMetNoForecasts(fetcher, now());
+        return cached;
+      }
       if (!response.ok)
         throw new Error(`Weather provider returned ${response.status}`);
       const payload: unknown = await response.json();

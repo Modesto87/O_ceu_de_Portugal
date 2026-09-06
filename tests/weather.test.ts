@@ -11,6 +11,7 @@ import {
 import { condition, hour, hourIndex, value } from '../lib/weather/format';
 import { metricColor } from '../lib/weather/colors';
 import { recommendClothing } from '../lib/weather/clothing';
+import { metNoSymbolToWmo, solarTimes } from '../lib/weather/met-no';
 import { compassAngle } from '../lib/map/compass';
 import type { Forecast } from '../lib/weather/types';
 
@@ -117,10 +118,10 @@ void test('provider failure does not cache an error or fabricate fresh data; the
   const get = createWeatherService(async () => {
     calls++;
     return calls === 1
-      ? new Response('rate limit', { status: 429 })
+      ? new Response('provider error', { status: 503 })
       : Response.json(payload());
   });
-  await assert.rejects(get(), /429/);
+  await assert.rejects(get(), /503/);
   assert.equal(Object.keys((await get()).districts).length, 20);
   assert.equal(calls, 2);
 });
@@ -177,6 +178,16 @@ void test('compass rotation follows north on screen in every cardinal direction'
   assert.equal(compassAngle(0, 0, 1, 0), 90);
   assert.equal(compassAngle(0, 0, 0, -1), 180);
   assert.equal(compassAngle(0, 0, -1, 0), -90);
+});
+void test('MET Norway symbols and solar fallback preserve the shared forecast contract', () => {
+  assert.equal(metNoSymbolToWmo('clearsky_day'), 0);
+  assert.equal(metNoSymbolToWmo('heavyrainshowersandthunder_night'), 95);
+  assert.equal(metNoSymbolToWmo('snowshowers_day'), 85);
+  const [sunrise, sunset] = solarTimes('2026-09-06', 38.7223, -9.1393);
+  assert.ok(Number.isFinite(sunrise));
+  assert.ok(sunset > sunrise);
+  assert.ok(sunset - sunrise > 11 * 3600);
+  assert.ok(sunset - sunrise < 14 * 3600);
 });
 void test('clothing advice uses the remaining hourly evolution, rain, wind and humidity', () => {
   const cold = fixture(5);

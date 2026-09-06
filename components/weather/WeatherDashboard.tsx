@@ -426,9 +426,15 @@ function Dashboard() {
           olhar lá para fora.
         </span>
         <div className="source-links">
-          <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">
-            Open-Meteo · CC BY 4.0 <ArrowUpRight size={12} />
-          </a>
+          {weather.data?.source === 'met-no' ? (
+            <a href="https://api.met.no/" target="_blank" rel="noreferrer">
+              Dados: MET Norway · CC BY 4.0 <ArrowUpRight size={12} />
+            </a>
+          ) : (
+            <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">
+              Open-Meteo · CC BY 4.0 <ArrowUpRight size={12} />
+            </a>
+          )}
           <a
             href="https://www.geoboundaries.org/api/current/gbOpen/PRT/ADM1/"
             target="_blank"

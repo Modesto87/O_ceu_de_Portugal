@@ -5,14 +5,14 @@ O projeto usa TypeScript de ponta a ponta, React para a interface, Vinext/Vite p
 ## Percurso dos dados
 
 1. TanStack Query consulta `GET /api/weather`.
-2. A rota consulta a cache Cloudflare (quando disponível).
-3. `createWeatherService` verifica a cache em memória e deduplica pedidos concorrentes.
-4. Uma consulta em lote obtém as 20 previsões Open-Meteo.
-5. A estrutura e as séries são validadas; apenas uma resposta completa entra na cache.
+2. `createWeatherService` verifica a cache em memória e deduplica pedidos concorrentes.
+3. Uma consulta em lote obtém as 20 previsões Open-Meteo.
+4. A estrutura e as séries são validadas; apenas uma resposta completa entra na cache.
+5. A rota devolve uma política HTTP de uma hora para navegadores e caches compatíveis.
 6. `fetchedAt` e `expiresAt` estabelecem a validade de uma hora; erros devolvem HTTP 503 e nunca são guardados como previsões.
 7. O cliente mantém a resposta, agenda a renovação e comunica dados atrasados. Falhas têm tentativas limitadas e repetição espaçada.
 
-A cache Cloudflare é por ponto de presença, e a cache em memória por isolate. Não existe garantia de um único pedido global em vários pontos de presença. Para tráfego muito elevado, considerar cache central durável e um plano da API adequado.
+A cache em memória é por processo/isolate e a cache HTTP depende da infraestrutura entre o servidor e o navegador. Não existe garantia de um único pedido global. Para tráfego muito elevado, considerar cache central durável e um plano da API adequado.
 
 ## Mapa
 

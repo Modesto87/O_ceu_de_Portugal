@@ -1,20 +1,8 @@
 import { createWeatherService } from '@/lib/weather/service';
 
 const getWeather = createWeatherService();
-export async function GET(request: Request) {
-  // Cloudflare's cache shares the hourly response across visitors in each region.
-  const cache =
-    typeof caches !== 'undefined'
-      ? (caches as unknown as { default?: Cache }).default
-      : undefined;
-  const key = new Request(new URL('/api/weather?schema=3', request.url));
+export async function GET() {
   try {
-    const hit = await cache?.match(key);
-    if (hit)
-      return new Response(hit.body, {
-        status: hit.status,
-        headers: new Headers(hit.headers),
-      });
     const data = await getWeather();
     const seconds = Math.max(
       1,
@@ -22,16 +10,11 @@ export async function GET(request: Request) {
     );
     const response = Response.json(data, {
       headers: {
-        'Cache-Control': `public, max-age=${seconds}`,
+        'Cache-Control': `public, max-age=${seconds}, s-maxage=${seconds}`,
         'X-Weather-Source': 'Open-Meteo',
         'X-Content-Type-Options': 'nosniff',
       },
     });
-    try {
-      await cache?.put(key, response.clone());
-    } catch {
-      /* Cache failures must not hide a valid forecast. */
-    }
     return response;
   } catch (error) {
     console.error(

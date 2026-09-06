@@ -30,7 +30,7 @@ app/
   page.tsx                  Entrada da aplicação
   layout.tsx                Idioma, fontes e metadados
   globals.css               Tema, animações e breakpoints
-  api/weather/route.ts      Endpoint meteorológico e cache partilhada
+  api/weather/route.ts      Endpoint meteorológico e política de cache HTTP
 components/
   map/PortugalMap.tsx       Cena Three.js, geometrias, câmara e seleção
   weather/
@@ -58,7 +58,7 @@ docs/                      Arquitetura, fontes e validação
 
 ## Dados e atualização
 
-A [Open-Meteo](https://open-meteo.com/en/docs) combina modelos meteorológicos e escolhe o modelo disponível para cada coordenada (`best_match`). O servidor pede as 20 referências em lote e guarda uma resposta durante **3 600 segundos**. Pedidos simultâneos no mesmo processo partilham a mesma consulta. Em produção, a cache Cloudflare partilha respostas por ponto de presença.
+A [Open-Meteo](https://open-meteo.com/en/docs) combina modelos meteorológicos e escolhe o modelo disponível para cada coordenada (`best_match`). O servidor pede as 20 referências em lote e guarda uma resposta durante **3 600 segundos**. Pedidos simultâneos no mesmo processo partilham a mesma consulta e a resposta inclui uma política HTTP de uma hora para o navegador e caches compatíveis.
 
 O navegador atualiza ao expirar a resposta. Ao regressar a uma aba ou recuperar a rede, volta a consultar se os dados expiraram. Uma aba fechada não precisa de continuar a fazer pedidos: o primeiro acesso após a expiração renova os dados. Não existe uma tarefa agendada a consumir a API sem visitantes. Em caso de falha, mantém a última previsão na sessão, identifica-a como atrasada e permite tentar novamente. Nunca substitui uma falha por dados inventados.
 

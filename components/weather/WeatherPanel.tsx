@@ -8,9 +8,11 @@ import {
   Sun,
   Sunrise,
   Sunset,
+  Waves,
 } from 'lucide-react';
 import type { District } from '@/lib/weather/districts';
 import { REGION_NAMES } from '@/lib/weather/districts';
+import { seaPointForDistrict } from '@/lib/weather/coast';
 import type { Forecast } from '@/lib/weather/types';
 import { condition, hour, value } from '@/lib/weather/format';
 import WeatherIcon from './WeatherIcon';
@@ -18,15 +20,18 @@ import WeatherIcon from './WeatherIcon';
 export default function WeatherPanel({
   district,
   forecast,
+  sea,
   loading,
 }: {
   district: District;
   forecast?: Forecast;
+  sea?: Record<string, number | null>;
   loading: boolean;
 }) {
   const c = forecast?.current,
     d = forecast?.daily;
   const uv = d?.uv_index_max[0];
+  const seaPoint = seaPointForDistrict(district.id);
   return (
     <aside
       className="weather-panel"
@@ -102,6 +107,15 @@ export default function WeatherPanel({
               </small>
             </strong>
           </div>
+          {seaPoint && (
+            <div>
+              <Waves size={19} />
+              <span>Água do mar</span>
+              <strong>
+                {value(sea?.[seaPoint.id])} <small>°C · {seaPoint.name}</small>
+              </strong>
+            </div>
+          )}
         </div>
         <div className="sun-times">
           <div>

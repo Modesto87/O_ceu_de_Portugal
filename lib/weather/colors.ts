@@ -6,6 +6,7 @@ const scales: Record<
   temperature: { min: -5, max: 40, from: [55, 117, 148], to: [202, 179, 116] },
   rain: { min: 0, max: 100, from: [36, 73, 87], to: [76, 156, 196] },
   wind: { min: 0, max: 70, from: [53, 68, 100], to: [178, 164, 212] },
+  sea: { min: 12, max: 26, from: [43, 108, 158], to: [126, 205, 193] },
 };
 export function metricColor(layer: Layer, metric: number | null | undefined) {
   if (metric == null || !Number.isFinite(metric)) return '#36515b';

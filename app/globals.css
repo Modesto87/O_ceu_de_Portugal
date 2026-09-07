@@ -808,6 +808,15 @@ footer a {
 .legend-wind i {
   background: linear-gradient(90deg, #354464, #b2a4d4);
 }
+.legend-sea i {
+  background: linear-gradient(90deg, #2b6c9e, #7ecdc1);
+}
+.map-label.sea {
+  border-color: #4d8f8f88;
+}
+.map-label.sea strong {
+  color: #a8ddd4;
+}
 .forecast-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(340px, 1fr);

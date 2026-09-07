@@ -22,6 +22,7 @@ import {
   Pause,
   RefreshCw,
   AlertCircle,
+  Waves,
 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -33,6 +34,7 @@ import {
 } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { DISTRICTS, REGION_NAMES, type Region } from '@/lib/weather/districts';
+import { seaPointForDistrict } from '@/lib/weather/coast';
 import { hour, hourIndex, value } from '@/lib/weather/format';
 import type { Layer } from '@/lib/weather/types';
 import { useWeather } from '@/hooks/use-weather';
@@ -173,8 +175,14 @@ function Dashboard() {
       ? ['−5 °C', '40 °C']
       : layer === 'rain'
         ? ['0%', '100%']
-        : ['0 km/h', '70+ km/h'];
+        : layer === 'sea'
+          ? ['12 °C', '26 °C']
+          : ['0 km/h', '70+ km/h'];
   function mapValue(id: string) {
+    if (layer === 'sea') {
+      const point = seaPointForDistrict(id);
+      return point ? value(weather.data?.sea?.[point.id], '°') : '—';
+    }
     const f = weather.data?.districts[id];
     if (!f) return '—';
     const ix = hourIndex(f.hourly.time) + offset;
@@ -297,6 +305,7 @@ function Dashboard() {
                           ['temperature', 'Temperatura', Thermometer],
                           ['rain', 'Chuva', Droplets],
                           ['wind', 'Vento', Wind],
+                          ['sea', 'Mar', Waves],
                         ] as const
                       ).map(([id, title, Icon]) => (
                         <TabsTrigger key={id} value={id}>
@@ -403,6 +412,7 @@ function Dashboard() {
           <WeatherPanel
             district={district}
             forecast={forecast}
+            sea={weather.data?.sea}
             loading={weather.isPending}
           />
         </div>

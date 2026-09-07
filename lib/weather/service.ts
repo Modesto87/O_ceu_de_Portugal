@@ -1,8 +1,11 @@
 import { DISTRICTS } from './districts';
+import { COASTAL_POINTS } from './coast';
 import { fetchMetNoForecasts } from './met-no';
 import type { Forecast, WeatherResponse } from './types';
 
 export const HOUR_MS = 60 * 60 * 1000;
+export const FAILURE_COOLDOWN_MS = 60 * 1000;
+export const MAX_FAILURE_COOLDOWN_MS = 15 * 60 * 1000;
 const numericArray = (value: unknown): value is (number | null)[] =>
   Array.isArray(value) &&
   value.every(
@@ -112,6 +115,49 @@ export function weatherResponseFromPayload(
   };
 }
 
+export function marineUrl() {
+  const query = new URLSearchParams({
+    latitude: COASTAL_POINTS.map((p) => p.latitude).join(','),
+    longitude: COASTAL_POINTS.map((p) => p.longitude).join(','),
+    current: 'sea_surface_temperature',
+    timeformat: 'unixtime',
+    timezone: 'GMT',
+  });
+  return `https://marine-api.open-meteo.com/v1/marine?${query}`;
+}
+
+export function seaFromPayload(
+  payload: unknown,
+): Record<string, number | null> {
+  if (!Array.isArray(payload) || payload.length !== COASTAL_POINTS.length)
+    throw new Error('Invalid marine provider response');
+  const entries = payload.map((point, index) => {
+    const temperature = (point as { current?: { sea_surface_temperature?: unknown } })
+      ?.current?.sea_surface_temperature;
+    if (
+      temperature !== null &&
+      (typeof temperature !== 'number' || !Number.isFinite(temperature))
+    )
+      throw new Error('Invalid marine provider response');
+    return [COASTAL_POINTS[index].id, temperature] as const;
+  });
+  return Object.fromEntries(entries);
+}
+
+async function fetchSeaTemperatures(
+  fetcher: typeof fetch,
+): Promise<Record<string, number | null> | undefined> {
+  try {
+    const response = await fetcher(marineUrl(), {
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!response.ok) return undefined;
+    return seaFromPayload(await response.json());
+  } catch {
+    return undefined;
+  }
+}
+
 /** Shared by all visitors in an isolate; concurrent requests share one fetch. */
 export function createWeatherService(
   fetcher: typeof fetch = fetch,
@@ -119,25 +165,54 @@ export function createWeatherService(
 ) {
   let cached: WeatherResponse | undefined;
   let pending: Promise<WeatherResponse> | undefined;
+  let consecutiveFailures = 0;
+  let retryAfter = 0;
+  const scheduleRetry = () => {
+    consecutiveFailures++;
+    retryAfter =
+      now() +
+      Math.min(
+        FAILURE_COOLDOWN_MS * 2 ** (consecutiveFailures - 1),
+        MAX_FAILURE_COOLDOWN_MS,
+      );
+  };
   return async function getWeather(): Promise<WeatherResponse> {
     if (cached && cached.expiresAt > now()) return cached;
     if (pending) return pending;
+    // During a failure cooldown, never touch the upstream: serve the last
+    // good snapshot if one exists, otherwise fail fast.
+    if (now() < retryAfter) {
+      if (cached) return cached;
+      throw new Error('Weather provider temporarily unavailable');
+    }
     pending = (async () => {
+      const sea = fetchSeaTemperatures(fetcher);
       const response = await fetcher(forecastUrl(), {
         signal: AbortSignal.timeout(18000),
       });
+      let fresh: WeatherResponse;
       if (response.status === 429 || response.status === 403) {
-        cached = await fetchMetNoForecasts(fetcher, now());
-        return cached;
+        fresh = await fetchMetNoForecasts(fetcher, now());
+      } else {
+        if (!response.ok)
+          throw new Error(`Weather provider returned ${response.status}`);
+        const payload: unknown = await response.json();
+        fresh = weatherResponseFromPayload(payload, now());
       }
-      if (!response.ok)
-        throw new Error(`Weather provider returned ${response.status}`);
-      const payload: unknown = await response.json();
-      cached = weatherResponseFromPayload(payload, now());
+      const seaTemperatures = await sea;
+      if (seaTemperatures) fresh.sea = seaTemperatures;
+      cached = fresh;
       return cached;
     })();
     try {
-      return await pending;
+      const fresh = await pending;
+      consecutiveFailures = 0;
+      retryAfter = 0;
+      return fresh;
+    } catch (error) {
+      scheduleRetry();
+      if (cached) return cached;
+      throw error;
     } finally {
       pending = undefined;
     }

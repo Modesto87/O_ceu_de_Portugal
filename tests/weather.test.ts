@@ -2,11 +2,15 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { DISTRICTS } from '../lib/weather/districts';
+import { COASTAL_POINTS } from '../lib/weather/coast';
 import {
   createWeatherService,
+  FAILURE_COOLDOWN_MS,
   HOUR_MS,
   validateForecast,
   forecastUrl,
+  marineUrl,
+  seaFromPayload,
 } from '../lib/weather/service';
 import { condition, hour, hourIndex, value } from '../lib/weather/format';
 import { metricColor } from '../lib/weather/colors';
@@ -70,6 +74,11 @@ function fixture(temperature = 21): Forecast {
   } as Forecast;
 }
 const payload = () => DISTRICTS.map((_, i) => fixture(i));
+const marinePayload = () =>
+  COASTAL_POINTS.map((_, i) => ({
+    current: { sea_surface_temperature: (15 + i) as number | null },
+  }));
+const isMarine = (url: unknown) => String(url).includes('marine');
 
 void test('all 18 districts and both autonomous regions have matching real geometry', () => {
   const geometry = JSON.parse(
@@ -93,7 +102,8 @@ void test('one upstream request serves concurrent visitors and remains cached fo
   let calls = 0,
     time = 1788641100000;
   const get = createWeatherService(
-    async () => {
+    async (url) => {
+      if (isMarine(url)) return Response.json(marinePayload());
       calls++;
       await Promise.resolve();
       return Response.json(payload());
@@ -104,6 +114,8 @@ void test('one upstream request serves concurrent visitors and remains cached fo
   assert.equal(calls, 1);
   assert.equal(first, second);
   assert.equal(first.districts['PT-11'].current.temperature_2m, 10);
+  assert.equal(first.sea?.['sea-viana'], 15);
+  assert.equal(first.sea?.['sea-faro'], 22);
   time += HOUR_MS - 1;
   assert.equal(await get(), first);
   assert.equal(calls, 1);
@@ -113,16 +125,59 @@ void test('one upstream request serves concurrent visitors and remains cached fo
   assert.equal(refreshed.fetchedAt, time);
   assert.equal(refreshed.expiresAt - refreshed.fetchedAt, HOUR_MS);
 });
-void test('provider failure does not cache an error or fabricate fresh data; the next request recovers', async () => {
-  let calls = 0;
-  const get = createWeatherService(async () => {
-    calls++;
-    return calls === 1
-      ? new Response('provider error', { status: 503 })
-      : Response.json(payload());
-  });
+void test('provider failure does not cache an error; backoff blocks hammering and recovery happens after the cooldown', async () => {
+  let calls = 0,
+    time = 1788641100000;
+  const get = createWeatherService(
+    async (url) => {
+      if (isMarine(url)) return Response.json(marinePayload());
+      calls++;
+      return calls <= 2
+        ? new Response('provider error', { status: 503 })
+        : Response.json(payload());
+    },
+    () => time,
+  );
   await assert.rejects(get(), /503/);
+  assert.equal(calls, 1);
+  // Within the cooldown the service fails fast without touching the upstream.
+  await assert.rejects(get(), /temporarily unavailable/);
+  time += FAILURE_COOLDOWN_MS - 1;
+  await assert.rejects(get(), /temporarily unavailable/);
+  assert.equal(calls, 1);
+  // After the cooldown one retry is allowed; it fails and backs off further.
+  time++;
+  await assert.rejects(get(), /503/);
+  assert.equal(calls, 2);
+  time += FAILURE_COOLDOWN_MS;
+  await assert.rejects(get(), /temporarily unavailable/);
+  assert.equal(calls, 2);
+  time += FAILURE_COOLDOWN_MS;
   assert.equal(Object.keys((await get()).districts).length, 20);
+  assert.equal(calls, 3);
+});
+void test('an expired cache keeps being served while the upstream is failing', async () => {
+  let calls = 0,
+    time = 1788641100000;
+  const get = createWeatherService(
+    async (url) => {
+      if (isMarine(url)) return Response.json(marinePayload());
+      calls++;
+      return calls === 1
+        ? Response.json(payload())
+        : new Response('provider error', { status: 503 });
+    },
+    () => time,
+  );
+  const fresh = await get();
+  time += HOUR_MS;
+  const stale = await get();
+  assert.equal(calls, 2);
+  assert.equal(stale, fresh);
+  // Subsequent visitors get the stale snapshot without new upstream calls.
+  assert.equal(await get(), fresh);
+  time += FAILURE_COOLDOWN_MS - 1;
+  assert.equal(await get(), fresh);
   assert.equal(calls, 2);
 });
 void test('invalid and partial provider results are rejected', async () => {
@@ -172,6 +227,43 @@ void test('map legend colors clamp outliers and distinguish missing observations
     metricColor('temperature', -5),
   );
   assert.notEqual(metricColor('rain', null), metricColor('rain', 0));
+  assert.equal(metricColor('sea', 26), '#7ecdc1');
+  assert.equal(metricColor('sea', 100), metricColor('sea', 26));
+  assert.equal(metricColor('sea', 0), metricColor('sea', 12));
+  assert.notEqual(metricColor('sea', null), metricColor('sea', 12));
+});
+void test('marine request uses every coastal coordinate in order and asks for the current sea surface temperature', () => {
+  const p = new URL(marineUrl()).searchParams;
+  assert.equal(p.get('latitude')?.split(',').length, COASTAL_POINTS.length);
+  assert.equal(p.get('longitude')?.split(',').length, COASTAL_POINTS.length);
+  assert.equal(p.get('current'), 'sea_surface_temperature');
+  assert.equal(p.get('timeformat'), 'unixtime');
+});
+void test('marine payloads are validated point by point and allow missing observations', () => {
+  const sea = seaFromPayload(marinePayload());
+  assert.equal(Object.keys(sea).length, COASTAL_POINTS.length);
+  assert.equal(sea['sea-viana'], 15);
+  const withGap = marinePayload();
+  withGap[0].current.sea_surface_temperature = null;
+  assert.equal(seaFromPayload(withGap)['sea-viana'], null);
+  assert.throws(() => seaFromPayload(marinePayload().slice(1)), /Invalid marine/);
+  const broken = marinePayload();
+  (broken[0].current as { sea_surface_temperature: unknown })
+    .sea_surface_temperature = 'warm';
+  assert.throws(() => seaFromPayload(broken), /Invalid marine/);
+});
+void test('a failing marine provider never breaks the forecast response', async () => {
+  const time = 1788641100000;
+  const get = createWeatherService(
+    async (url) =>
+      isMarine(url)
+        ? new Response('marine down', { status: 503 })
+        : Response.json(payload()),
+    () => time,
+  );
+  const data = await get();
+  assert.equal(data.sea, undefined);
+  assert.equal(data.districts['PT-11'].current.temperature_2m, 10);
 });
 void test('compass rotation follows north on screen in every cardinal direction', () => {
   assert.equal(compassAngle(0, 0, 0, 1), 0);

@@ -37,5 +37,6 @@ export type WeatherResponse = {
   fetchedAt: number;
   expiresAt: number;
   districts: Record<string, Forecast>;
+  sea?: Record<string, number | null>;
 };
-export type Layer = 'temperature' | 'rain' | 'wind';
+export type Layer = 'temperature' | 'rain' | 'wind' | 'sea';

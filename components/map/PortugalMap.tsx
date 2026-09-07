@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Plus, Minus, RotateCcw } from 'lucide-react';
 import type { Region } from '@/lib/weather/districts';
 import { DISTRICTS } from '@/lib/weather/districts';
+import { COASTAL_POINTS, seaPointForDistrict } from '@/lib/weather/coast';
 import type { WeatherResponse, Layer } from '@/lib/weather/types';
 import { hourIndex, value } from '@/lib/weather/format';
 import { metricColor } from '@/lib/weather/colors';
@@ -214,6 +215,44 @@ export default function PortugalMap(props: Props) {
           point: new THREE.Vector3(pt.x, 0.4, -pt.y),
         };
       });
+      const seaEntries = COASTAL_POINTS.filter(
+        (p) => p.region === props.region,
+      ).map((p) => {
+        const button = document.createElement('button');
+        button.className = 'map-label sea';
+        button.setAttribute(
+          'aria-label',
+          `Temperatura da água do mar em ${p.name}`,
+        );
+        button.onclick = () => latest.current.onSelect(p.districtId);
+        const name = document.createElement('span');
+        name.textContent = p.name;
+        const temp = document.createElement('strong');
+        temp.textContent = '—';
+        button.appendChild(name);
+        button.appendChild(temp);
+        overlay.appendChild(button);
+        const pt = project([p.longitude, p.latitude]);
+        const marker = new THREE.Mesh(
+          new THREE.CircleGeometry(0.09, 24),
+          new THREE.MeshBasicMaterial({
+            color: 0x2b6c9e,
+            transparent: true,
+            opacity: 0.9,
+            side: THREE.DoubleSide,
+          }),
+        );
+        marker.rotation.x = -Math.PI / 2;
+        marker.position.set(pt.x, 0.02, -pt.y);
+        scene.add(marker);
+        return {
+          id: p.id,
+          button,
+          temp,
+          marker,
+          point: new THREE.Vector3(pt.x, 0.05, -pt.y),
+        };
+      });
       const resize = () => {
         const { width, height } = container.getBoundingClientRect();
         renderer.setSize(width, height);
@@ -286,11 +325,17 @@ export default function PortugalMap(props: Props) {
               ? f?.hourly.precipitation_probability[ix]
               : layer === 'wind'
                 ? f?.hourly.wind_speed_10m[ix]
-                : offset
-                  ? f?.hourly.temperature_2m[ix]
-                  : f?.current.temperature_2m;
+                : layer === 'sea'
+                  ? undefined
+                  : offset
+                    ? f?.hourly.temperature_2m[ix]
+                    : f?.current.temperature_2m;
           const color = new THREE.Color(
-            active ? '#d6bd7a' : metricColor(layer, metric),
+            active
+              ? '#d6bd7a'
+              : layer === 'sea'
+                ? '#36515b'
+                : metricColor(layer, metric),
           );
           entry.materials.forEach((m) => {
             m.color.lerp(color, reduced ? 1 : 0.12);
@@ -310,17 +355,18 @@ export default function PortugalMap(props: Props) {
           const active = entry.id === selected;
           const display =
             active ||
-            (width > 460 &&
-              [
-                'PT-13',
-                'PT-04',
-                'PT-06',
-                'PT-05',
-                'PT-07',
-                'PT-08',
-                'PT-11',
-              ].includes(entry.id)) ||
-            props.region !== 'continent';
+            (layer !== 'sea' &&
+              ((width > 460 &&
+                [
+                  'PT-13',
+                  'PT-04',
+                  'PT-06',
+                  'PT-05',
+                  'PT-07',
+                  'PT-08',
+                  'PT-11',
+                ].includes(entry.id)) ||
+                props.region !== 'continent'));
           const pos = entry.point.clone();
           pos.y = active ? 0.72 : 0.45;
           pos.project(camera);
@@ -337,12 +383,37 @@ export default function PortugalMap(props: Props) {
               ? value(f?.hourly.precipitation_probability[ix], '%')
               : layer === 'wind'
                 ? value(f?.hourly.wind_speed_10m[ix], ' km/h')
-                : value(
-                    offset
-                      ? f?.hourly.temperature_2m[ix]
-                      : f?.current.temperature_2m,
-                    '°',
-                  );
+                : layer === 'sea'
+                  ? value(
+                      weather?.sea?.[
+                        seaPointForDistrict(entry.id)?.id ?? ''
+                      ],
+                      '°',
+                    )
+                  : value(
+                      offset
+                        ? f?.hourly.temperature_2m[ix]
+                        : f?.current.temperature_2m,
+                      '°',
+                    );
+        });
+        seaEntries.forEach((entry) => {
+          const sst = weather?.sea?.[entry.id];
+          const pos = entry.point.clone();
+          pos.y = 0.18;
+          pos.project(camera);
+          entry.button.style.display =
+            layer === 'sea' && Math.abs(pos.x) < 0.96 && Math.abs(pos.y) < 0.93
+              ? ''
+              : 'none';
+          entry.button.style.transform = `translate(-50%,-100%) translate(${(pos.x * 0.5 + 0.5) * width}px,${(-pos.y * 0.5 + 0.5) * height}px)`;
+          entry.temp.textContent = value(sst, '°');
+          entry.marker.visible = layer === 'sea';
+          const target = new THREE.Color(metricColor('sea', sst));
+          (entry.marker.material as InstanceType<typeof THREE.MeshBasicMaterial>).color.lerp(
+            target,
+            reduced ? 1 : 0.12,
+          );
         });
         renderer.render(scene, camera);
       };
